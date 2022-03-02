@@ -1,0 +1,10 @@
+{
+  "Comment": "Serverless image cataloging state machine starter",
+  "StartAt": "Pass",
+  "States": {
+    "Pass": {
+      "Type": "Pass",
+      "End": true
+    }
+  }
+}

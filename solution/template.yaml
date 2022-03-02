@@ -1,0 +1,62 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  serverless-image-catalog-solution
+
+Parameters:
+  ModeratorEmailAddress:
+    Type: String
+    Default: moderator@example.com
+    Description: Enter the email address that will receive content moderation alerts.
+
+Resources:
+  ImageCatalogStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: image-catalog-workflow-solution
+      DefinitionUri: statemachine/image-catalog-solution.asl.json
+      DefinitionSubstitutions:
+        CatalogTable: !Ref CatalogTable
+        ModeratorSNSTopic: !Ref ModeratorSNSTopic
+      Policies:
+        - RekognitionDetectOnlyPolicy: {}
+        - S3ReadPolicy:
+            BucketName: !Ref IngestionBucket
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt ModeratorSNSTopic.TopicName
+        - DynamoDBWritePolicy:
+            TableName: !Ref CatalogTable
+
+  IngestionBucket:
+    Type: AWS::S3::Bucket
+
+  CatalogTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      PrimaryKey:
+        Name: Id
+        Type: String
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+
+  ModeratorSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription:
+        - Endpoint: !Ref ModeratorEmailAddress
+          Protocol: "email"
+
+Outputs:
+  IngestionBucket:
+    Description: "S3 bucket name"
+    Value: !Ref IngestionBucket
+  CatalogTable:
+    Description: "DynamoDB table name"
+    Value: !Ref CatalogTable
+  ModeratorSNSTopic:
+    Description: "SNS topic ARN"
+    Value: !Ref ModeratorSNSTopic
