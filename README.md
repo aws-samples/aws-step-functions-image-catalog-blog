@@ -1,6 +1,6 @@
 ## Serverless Image Catalog
 
-Photo sharing websites often allow users to publish user-generated content such as text, images, or videos. Manual content review and categorization can be challenging. This solution enables the automation of these tasks.
+Photo sharing websites often allow users to publish user-generated content such as text, images, or videos. Manual content review and categorization can be challenging. This solution enables the automation of these tasks. See the AWS Blog post [Building a serverless image catalog with AWS Step Functions Workflow Studio](https://aws.amazon.com/blogs/compute/building-a-serverless-image-catalog-with-aws-step-functions-workflow-studio/) for a detailed walkthrough.
 
 ![Serverless image catalog architecture](./architecture.png)
 
@@ -13,7 +13,7 @@ The example implements the following workflow:
 
 This repository contains two AWS Serverless Application Model (AWS SAM) templates:
 
-1. `starter/template.yml` intended as the starting point for following the walkthrough in the AWS Compute Blog post "Building a serverless image catalog with AWS Step Functions Workflow Studio".
+1. `starter/template.yml` intended as the starting point for following the walkthrough in the AWS Compute Blog post [Building a serverless image catalog with AWS Step Functions Workflow Studio](https://aws.amazon.com/blogs/compute/building-a-serverless-image-catalog-with-aws-step-functions-workflow-studio/).
 2. `solution/template.yml`for deploying the completed serverless image catalog solution.
 
 ## Prerequisites
