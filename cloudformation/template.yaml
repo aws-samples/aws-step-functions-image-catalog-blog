@@ -1,0 +1,289 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: |
+  Beispielworkflow Automatisierter Bilderkatalog
+Parameters:
+  ModeratorEmailAddress:
+    Type: String
+    Default: moderator@beispiel.de
+    Description: E-Mail-Adresse, die Benachrichtigungen zum Ergebnis der Inhaltsmoderation erhalten soll.
+Outputs:
+  IngestionBucket:
+    Description: S3 Bucket ARN
+    Value: !Ref IngestionBucket
+Resources:
+  IngestionBucket:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      NotificationConfiguration:
+        EventBridgeConfiguration:
+          EventBridgeEnabled: true
+
+  ModeratorSNSTopic:
+    Type: "AWS::SNS::Topic"
+    Properties:
+      Subscription:
+        - Endpoint: !Ref ModeratorEmailAddress
+          Protocol: email
+
+  ImageCatalogStateMachine:
+    Type: "AWS::StepFunctions::StateMachine"
+    Properties:
+      DefinitionString: |-
+        {
+          "Comment": "Beispielworkflow: Automatisierter Bilderkatalog",
+          "StartAt": "Auf unpassende Inhalte pruefen",
+          "States": {
+            "Auf unpassende Inhalte pruefen": {
+              "Type": "Task",
+              "Parameters": {
+                "Image": {
+                  "S3Object": {
+                    "Bucket.$": "$.detail.bucket.name",
+                    "Name.$": "$.detail.object.key"
+                  }
+                }
+              },
+              "Resource": "arn:aws:states:::aws-sdk:rekognition:detectModerationLabels",
+              "Next": "Unpassende Inhalte entdeckt?",
+              "ResultPath": "$.moderationResult"
+            },
+            "Unpassende Inhalte entdeckt?": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.moderationResult.ModerationLabels[0]",
+                  "IsPresent": true,
+                  "Next": "Moderatoren benachrichtigen"
+                }
+              ],
+              "Default": "Bild verarbeiten"
+            },
+            "Bild verarbeiten": {
+              "Type": "Parallel",
+              "End": true,
+              "Branches": [
+                {
+                  "StartAt": "Objekte im Bild erkennen",
+                  "States": {
+                    "Objekte im Bild erkennen": {
+                      "Type": "Task",
+                      "Parameters": {
+                        "Image": {
+                          "S3Object": {
+                            "Bucket.$": "$.detail.bucket.name",
+                            "Name.$": "$.detail.object.key"
+                          }
+                        }
+                      },
+                      "Resource": "arn:aws:states:::aws-sdk:rekognition:detectLabels",
+                      "Next": "Objekte in Datenbank speichern",
+                      "ResultPath": "$.output"
+                    },
+                    "Objekte in Datenbank speichern": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::dynamodb:updateItem",
+                      "Parameters": {
+                        "TableName": "${CatalogTable}",
+                        "Key": {
+                          "Id": {
+                            "S.$": "$.detail.object.key"
+                          }
+                        },
+                        "UpdateExpression": "set detectedObjects=:o",
+                        "ExpressionAttributeValues": {
+                          ":o": {
+                            "S.$": "States.JsonToString($.output.Labels)"
+                          }
+                        }
+                      },
+                      "End": true
+                    }
+                  }
+                },
+                {
+                  "StartAt": "Text im Bild erkennen",
+                  "States": {
+                    "Text im Bild erkennen": {
+                      "Type": "Task",
+                      "Parameters": {
+                        "Image": {
+                          "S3Object": {
+                            "Bucket.$": "$.detail.bucket.name",
+                            "Name.$": "$.detail.object.key"
+                          }
+                        }
+                      },
+                      "Resource": "arn:aws:states:::aws-sdk:rekognition:detectText",
+                      "Next": "Text in Datenbank abspeichern",
+                      "ResultPath": "$.output"
+                    },
+                    "Text in Datenbank abspeichern": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::dynamodb:updateItem",
+                      "Parameters": {
+                        "TableName": "${CatalogTable}",
+                        "Key": {
+                          "Id": {
+                            "S.$": "$.detail.object.key"
+                          }
+                        },
+                        "UpdateExpression": "set detectedText=:t",
+                        "ExpressionAttributeValues": {
+                          ":t": {
+                            "S.$": "States.JsonToString($.output.TextDetections)"
+                          }
+                        }
+                      },
+                      "End": true
+                    }
+                  }
+                }
+              ]
+            },
+            "Moderatoren benachrichtigen": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::sns:publish",
+              "Parameters": {
+                "Message.$": "$",
+                "TopicArn": "${ModeratorSNSTopic}"
+              },
+              "End": true
+            }
+          }
+        }
+      RoleArn: !GetAtt
+        - ImageCatalogStateMachineRole
+        - Arn
+      StateMachineName: Beispielworkflow
+      Tags:
+        - Key: "stateMachine:createdBy"
+          Value: SAM
+      DefinitionSubstitutions:
+        CatalogTable: !Ref CatalogTable
+        ModeratorSNSTopic: !Ref ModeratorSNSTopic
+
+  ImageCatalogStateMachineRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - "sts:AssumeRole"
+            Effect: Allow
+            Principal:
+              Service:
+                - states.amazonaws.com
+      ManagedPolicyArns: []
+      Policies:
+        - PolicyName: ImageCatalogStateMachineRolePolicy0
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "rekognition:DetectFaces"
+                  - "rekognition:DetectLabels"
+                  - "rekognition:DetectModerationLabels"
+                  - "rekognition:DetectText"
+                Resource: "*"
+        - PolicyName: ImageCatalogStateMachineRolePolicy1
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "s3:GetObject"
+                  - "s3:ListBucket"
+                  - "s3:GetBucketLocation"
+                  - "s3:GetObjectVersion"
+                  - "s3:GetLifecycleConfiguration"
+                Resource:
+                  - !Sub
+                    - "arn:${AWS::Partition}:s3:::${bucketName}"
+                    - bucketName: !Ref IngestionBucket
+                  - !Sub
+                    - "arn:${AWS::Partition}:s3:::${bucketName}/*"
+                    - bucketName: !Ref IngestionBucket
+        - PolicyName: ImageCatalogStateMachineRolePolicy2
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "sns:Publish"
+                Resource: !Sub
+                  - >-
+                    arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${topicName}
+                  - topicName: !GetAtt
+                      - ModeratorSNSTopic
+                      - TopicName
+        - PolicyName: ImageCatalogStateMachineRolePolicy3
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "dynamodb:PutItem"
+                  - "dynamodb:UpdateItem"
+                  - "dynamodb:BatchWriteItem"
+                Resource:
+                  - !Sub
+                    - >-
+                      arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${tableName}
+                    - tableName: !Ref CatalogTable
+                  - !Sub
+                    - >-
+                      arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${tableName}/index/*
+                    - tableName: !Ref CatalogTable
+      Tags:
+        - Key: "stateMachine:createdBy"
+          Value: SAM
+
+  CatalogTable:
+    Type: "AWS::DynamoDB::Table"
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: Id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: Id
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+
+  EventBridgeTriggerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [events.amazonaws.com]
+            Action: ["sts:AssumeRole"]
+      Policies:
+        - PolicyName: SfnPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Action: ["states:StartExecution"]
+                Effect: Allow
+                Resource: !GetAtt ImageCatalogStateMachine.Arn
+
+  EventBridgeTrigger:
+    Type: AWS::Events::Rule
+    Properties:
+      EventPattern: !Sub
+        - |
+          {
+            "source": ["aws.s3"],
+            "detail-type": ["Object Created"],
+            "detail": {
+              "bucket": {
+                "name": ["${IngestionBucketName}"]
+              }
+            }
+          }
+        - IngestionBucketName: !Ref IngestionBucket
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt ImageCatalogStateMachine.Arn
+          Id: StepFunctionTarget
+          RoleArn: !GetAtt EventBridgeTriggerRole.Arn
