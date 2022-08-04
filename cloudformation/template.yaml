@@ -14,10 +14,13 @@ Resources:
   IngestionBucket:
     Type: "AWS::S3::Bucket"
     Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: 'AES256'
       NotificationConfiguration:
         EventBridgeConfiguration:
           EventBridgeEnabled: true
-
   ModeratorSNSTopic:
     Type: "AWS::SNS::Topic"
     Properties:
