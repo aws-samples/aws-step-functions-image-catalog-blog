@@ -33,7 +33,7 @@ Resources:
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
-              SSEAlgorithm: 'AES256'
+              SSEAlgorithm: "AES256"
 
   CatalogTable:
     Type: AWS::Serverless::SimpleTable
@@ -48,6 +48,7 @@ Resources:
   ModeratorSNSTopic:
     Type: AWS::SNS::Topic
     Properties:
+      KmsMasterKeyId: "alias/aws/sns"
       Subscription:
         - Endpoint: !Ref ModeratorEmailAddress
           Protocol: "email"

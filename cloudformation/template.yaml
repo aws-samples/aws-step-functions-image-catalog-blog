@@ -17,13 +17,14 @@ Resources:
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
-              SSEAlgorithm: 'AES256'
+              SSEAlgorithm: "AES256"
       NotificationConfiguration:
         EventBridgeConfiguration:
           EventBridgeEnabled: true
   ModeratorSNSTopic:
     Type: "AWS::SNS::Topic"
     Properties:
+      KmsMasterKeyId: "alias/aws/sns"
       Subscription:
         - Endpoint: !Ref ModeratorEmailAddress
           Protocol: email
